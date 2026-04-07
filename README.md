@@ -174,3 +174,10 @@ git submodule add <this-repo-url> content
 ---
 
 **Happy Writing!** ✨
+
+## 番剧数据（已迁移到 content）
+
+- 追番数据：`content/data/anime.ts`
+- 封面目录：`content/images/anime/`
+- `cover` 写法：`/images/anime/<文件名>`
+- 详细说明：`docs/ANIME_GUIDE.md`

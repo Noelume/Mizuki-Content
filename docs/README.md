@@ -107,3 +107,7 @@ Mizuki-Content/
 ---
 
 **文档持续更新中...** 📖✨
+
+### 番剧维护
+
+- **[Anime 数据与图片位置说明](ANIME_GUIDE.md)** - `content/data/anime.ts` 与 `content/images/anime/` 使用规范

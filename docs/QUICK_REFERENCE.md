@@ -112,3 +112,18 @@ git log --oneline
 ---
 
 **需要详细说明？查看完整文档！** 📚
+
+## 🎬 番剧数据路径（content 版本）
+
+```bash
+# 数据文件
+content/data/anime.ts
+
+# 封面图片
+content/images/anime/
+
+# anime.ts 中封面字段写法
+cover: "/images/anime/your-cover.jpg"
+```
+
+更多说明：`docs/ANIME_GUIDE.md`
