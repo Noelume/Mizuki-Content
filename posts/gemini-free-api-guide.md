@@ -1,112 +1,134 @@
 ---
-title: 接入gemini免费api 攻略
+title: 接入 Gemini 免费 API 攻略
 published: 2026-05-04
-description: 详细教程：结合我的 Hermes 实际配置，教你如何接入 Gemini 免费 API、设置优雅的多模型回退机制，以及接入第三方中转站的方法。
+description: 结合 Hermes 的 config.yaml 正确写法，讲清楚如何接入 Gemini API、选择模型、设置多模型回退，以及接入第三方中转站。
 tags: [Hermes, Gemini, 教程, 配置, AI]
 category: 技术
 draft: false
 ---
 
-Gemini 目前提供了极其慷慨的免费 API 额度，是许多开发者个人日常折腾和接入智能体系统（如 Hermes）的绝佳选择。在这篇文章中，我将结合我在 `~/.hermes/` 下的实际配置，带你一步步打磨和配置 Hermes 以完美接入 Gemini 的免费 API。
+Gemini API 目前提供免费层，对个人日常折腾、脚本自动化和接入智能体系统（如 Hermes）都很适合。不过需要先说清楚：不是所有 Gemini 模型都能免费用，免费层也会有请求频率和每日请求量限制。
 
-本文不仅涵盖了最基础的接入方法，还包含为了保证稳定性而设置的**多模型回退机制（Fallback）**，以及针对部分无法直连或者需要统筹调度的场景如何接入**第三方中转站（Proxy）**。
+这篇只总结三件事：**接入 Gemini**、**配置多模型回退**、**接入第三方中转站**。Hermes 的核心配置写在 `~/.hermes/config.yaml`，不要套用其他版本的 `providers.custom`、`main_model`、`fallback_model` 写法。
 
-## 1. 基础接入：配置 Gemini API
+```mermaid
+flowchart LR
+  A[Hermes] --> B[默认 Gemini 模型]
+  B -->|失败/限流| C[Fallback 模型]
+  B --> D[官方 Gemini API]
+  C --> D
+  C --> E[第三方中转站]
+```
 
-在 Hermes 中接入模型主要依赖两处配置文件：`.env` 文件保存敏感的 Token 密钥，而 `config.yaml` 负责定义模型调度逻辑。
+## 1. 接入 Gemini
 
-### 配置 API Key (`.env`)
-
-首先，打开你的终端，编辑或创建 Hermes 的环境变量配置文件：
+先去 [Google AI Studio](https://aistudio.google.com/) 创建 API Key。然后用你习惯的编辑器打开 Hermes 配置文件，例如：
 
 ```bash
-vim ~/.hermes/.env
+code ~/.hermes/config.yaml
 ```
 
-在文件中，加入你从 [Google AI Studio](https://aistudio.google.com/) 申请到的免费 API Key：
-
-```env
-# LLM PROVIDER (Google AI Studio / Gemini)
-GEMINI_API_KEY=你的_GEMINI_API_KEY_放在这里
-```
-
-### 指定默认模型 (`config.yaml`)
-
-接下来，我们需要告诉 Hermes 默认使用哪个模型来提供服务。编辑主配置文件：
-
-```bash
-vim ~/.hermes/config.yaml
-```
-
-找到 `model` 节点，并按照如下方式配置：
+如果直接走 Google Gemini 官方接口，可以这样写：
 
 ```yaml
 model:
-  default: gemini-3.1-pro-preview # 设置 Gemini Pro 作为默认的高智商模型
+  default: gemini-3-flash-preview
   provider: gemini
   base_url: https://generativelanguage.googleapis.com/v1beta
+providers: {}
 ```
 
-这样你的 Hermes 就会默认唤起能力最强的 Gemini 模型来完成日常的任务规划与代码生成了。
+这三项是关键：
 
-## 2. 稳定性保障：多模型回退机制 (Fallback)
+- `default`：默认模型名。
+- `provider`：这里写 `gemini`。
+- `base_url`：官方 Gemini API 地址。
 
-虽然 Gemini 提供了免费额度，但是免费版存在一定的并发请求限制（Rate Limit）。如果我们高频请求，或者遇到 Google API 偶发的波动，Hermes 可能会罢工。
+如果你的账号确认可用 `gemini-3.1-pro-preview`，也可以把 `default` 改成它；如果只想优先使用免费层，更建议默认用 `gemini-3-flash-preview`。
 
-为了避免这种情况，Hermes 提供了一个极其优雅的功能：**多模型回退机制（Fallback Providers）**。它的逻辑是：当默认模型请求失败或超时，自动无缝切换到备用模型继续执行，对用户侧来说几乎是无感的。
+## 2. 多模型回退机制
 
-继续在你的 `~/.hermes/config.yaml` 中，添加或修改 `fallback_providers` 节点：
+免费层容易遇到限流，或者某个模型临时不可用。`fallback_providers` 可以让 Hermes 在默认模型失败时自动尝试备用模型。
 
 ```yaml
 fallback_providers:
-  # 第一顺位回退：如果 Pro 版本限流，回退到更轻量、速度更快的 Flash Lite 版本
   - provider: gemini
     model: gemini-3.1-flash-lite-preview
     base_url: https://generativelanguage.googleapis.com/v1beta
-  
-  # 第二顺位回退：如果整个 Gemini 服务不可用，切换到其他的可用模型（例如 OpenAI Codex）
-  - provider: openai-codex
-    model: gpt-5.5
-    base_url: https://chatgpt.com/backend-api/codex
 ```
 
-这种“**旗舰模型 -> 竞速模型 -> 异构厂商模型**”的梯队设计，是目前兼顾成本和稳定性的最佳实践。
-
-## 3. 进阶玩法：接入第三方中转站
-
-很多时候由于网络限制，我们无法直接连通 `generativelanguage.googleapis.com`；或者我们与朋友拼车，使用的是第三方的 OneAPI/NewAPI 等中转分发站点。
-
-要在 Hermes 中修改请求地址并走第三方中转，非常简单，只需要修改 `base_url`。
-
-### 方法一：全局通过环境变量修改（推荐）
-
-在 `~/.hermes/.env` 中，你可以通过指定 `GEMINI_BASE_URL` 全局覆盖所有 Gemini 驱动的请求地址。很多国内的中转商会提供与官方兼容的代理地址或 OpenAI 格式的接口地址。
-
-```env
-# 填入第三方中转站的地址
-GEMINI_BASE_URL=https://api.your-proxy-domain.com/v1beta
-# 此时 API Key 也要换成你在该中转站获取的令牌
-GEMINI_API_KEY=sk-xxxxxx中转站令牌xxxxxx
-```
-
-### 方法二：在 YAML 中为特定模型指定中转
-
-如果你既想用官方直连的 Gemini，又想在某个特定的回退模型里走中转站，你可以单独在 `config.yaml` 对应配置下的 `base_url` 做修改：
+也可以把完整配置放在一起：
 
 ```yaml
 model:
-  default: gemini-3.1-pro-preview
+  default: gemini-3-flash-preview
   provider: gemini
-  base_url: https://api.your-proxy-domain.com/v1beta # 这里改写成第三方中转站地址
+  base_url: https://generativelanguage.googleapis.com/v1beta
+providers: {}
+
+fallback_providers:
+  - provider: gemini
+    model: gemini-3.1-flash-lite-preview
+    base_url: https://generativelanguage.googleapis.com/v1beta
 ```
 
-**⚠️ 注意事项：**
-如果你的中转站是完全套壳成标准的 OpenAI API 格式（即以 `/v1` 结尾并期望调用 `chat/completions`），那么你需要将 provider 设置为 `openai`，并在环境变量中配置对应的 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL`，同时 `model` 名称填写中转站映射的模型名称（如 `gemini-pro`）。
+这样就是：默认走 `gemini-3-flash-preview`，失败后回退到 `gemini-3.1-flash-lite-preview`。
+
+## 3. 接入第三方中转站
+
+接入中转站的核心就是改 `base_url`。中转站一般分两种。
+
+如果中转站兼容 Gemini 原生接口，通常还是 `/v1beta`，`provider` 继续写 `gemini`：
+
+```yaml
+model:
+  default: gemini-3-flash-preview
+  provider: gemini
+  base_url: https://api.your-proxy-domain.com/v1beta
+providers: {}
+
+fallback_providers:
+  - provider: gemini
+    model: gemini-3.1-flash-lite-preview
+    base_url: https://api.your-proxy-domain.com/v1beta
+```
+
+如果中转站是 OpenAI-compatible 接口，通常是 `/v1`，`provider` 要写 `openai`，模型名以中转站后台显示为准：
+
+```yaml
+model:
+  default: gemini-3-flash-preview
+  provider: openai
+  base_url: https://api.your-proxy-domain.com/v1
+providers: {}
+
+fallback_providers:
+  - provider: openai
+    model: gemini-3.1-flash-lite-preview
+    base_url: https://api.your-proxy-domain.com/v1
+```
+
+也可以默认走官方 Gemini，失败后再走中转站：
+
+```yaml
+model:
+  default: gemini-3-flash-preview
+  provider: gemini
+  base_url: https://generativelanguage.googleapis.com/v1beta
+providers: {}
+
+fallback_providers:
+  # 官方 Gemini 原生接口
+  - provider: gemini
+    model: gemini-3.1-flash-lite-preview
+    base_url: https://generativelanguage.googleapis.com/v1beta
+
+  # OpenAI-compatible 中转站
+  - provider: openai
+    model: gemini-3-flash-preview
+    base_url: https://api.your-proxy-domain.com/v1
+```
 
 ## 总结
 
-经过这三步，你的 Hermes 已经变成了一台“既能白嫖 Gemini 强大算力，又兼具金刚不坏之身”的本地智能体核心了。
-
-通过合理设置**默认模型（Pro）**和**回退层（Flash/其它模型）**，你不仅最大化利用了免费 API 资源，也极大提高了工具链的可用性。而中转站的支持，则帮你扫清了最后一点网络连通性的障碍。
-
-去试试这套配置吧！享受由 Gemini 强劲驱动的 AI 工作流。
+这套配置就三层：默认模型负责日常请求，`fallback_providers` 负责兜底，中转站通过 `base_url` 接入。记住 `provider` 和接口格式要对应：Gemini 原生接口用 `gemini`，OpenAI-compatible 接口用 `openai`。
